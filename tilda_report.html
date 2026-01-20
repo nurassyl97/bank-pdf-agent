@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Анализ Kaspi Gold</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0b1220;
+      color: #e5e7eb;
+      line-height: 1.6;
+      padding: 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    .card {
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+    h2 { font-size: 20px; font-weight: 600; margin-bottom: 16px; color: #cbd5e1; }
+    h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #9ca3af; }
+    .summary-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px; margin-top: 16px;
+    }
+    .summary-item {
+      background: rgba(2, 6, 23, 0.6);
+      border: 1px solid rgba(55, 65, 81, 0.5);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .summary-label { font-size: 13px; color: #9ca3af; margin-bottom: 8px; }
+    .summary-value {
+      font-size: 24px; font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .positive { color: #22c55e; }
+    .negative { color: #f97373; }
+    .insight {
+      font-size: 14px; color: #cbd5e1; margin-top: 16px;
+      padding: 12px; background: rgba(34, 197, 94, 0.1);
+      border-left: 3px solid #22c55e; border-radius: 4px;
+    }
+    .insight.warning {
+      background: rgba(239, 68, 68, 0.1);
+      border-left-color: #f97373;
+    }
+    .chart-container {
+      position: relative; height: 300px; margin: 20px 0;
+    }
+    .chart-container.small { height: 250px; }
+    .credit-warning {
+      padding: 16px; border-radius: 12px; margin-top: 16px;
+      border: 2px solid;
+    }
+    .credit-warning.low { background: rgba(34, 197, 94, 0.1); border-color: #22c55e; }
+    .credit-warning.medium { background: rgba(251, 191, 36, 0.1); border-color: #fbbf24; }
+    .credit-warning.high { background: rgba(239, 68, 68, 0.1); border-color: #f97373; }
+    .leak-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px; background: rgba(2, 6, 23, 0.4);
+      border-radius: 8px; margin-bottom: 8px;
+    }
+    .recommendation {
+      background: rgba(2, 6, 23, 0.6);
+      border-left: 4px solid #3b82f6;
+      border-radius: 8px;
+      padding: 16px; margin-bottom: 12px;
+    }
+    .recommendation-title { font-weight: 600; margin-bottom: 8px; color: #60a5fa; }
+    .recommendation-desc { font-size: 14px; color: #cbd5e1; margin-bottom: 12px; }
+    .recommendation-savings {
+      display: flex; gap: 16px; font-size: 13px;
+    }
+    .recommendation-savings span { color: #9ca3af; }
+    .recommendation-savings strong { color: #22c55e; }
+    .impact-badge {
+      display: inline-block; padding: 4px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+    }
+    .impact-high { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+    .impact-medium { background: rgba(251, 191, 36, 0.2); color: #fcd34d; }
+    .impact-low { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+    .upload-section {
+      text-align: center; padding: 32px;
+    }
+    .btn {
+      display: inline-block; padding: 14px 28px;
+      background: linear-gradient(135deg, #22c55e, #a3e635);
+      color: #0b1120; border: none; border-radius: 999px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      box-shadow: 0 8px 24px rgba(34, 197, 94, 0.3);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(34, 197, 94, 0.4); }
+    .btn:active { transform: translateY(0); }
+    #file-input { display: none; }
+    .status { margin-top: 16px; font-size: 14px; color: #9ca3af; }
+    .status.error { color: #f97373; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="upload-section" class="card upload-section">
+      <h1>Kaspi Gold — анализ выписки</h1>
+      <p style="margin: 16px 0; color: #9ca3af;">
+        Загрузите PDF-выписку Kaspi (до 1 МБ) для получения детального финансового отчета
+      </p>
+      <button class="btn" onclick="document.getElementById('file-input').click()">Начать анализ</button>
+      <input type="file" id="file-input" accept="application/pdf" />
+      <div id="status" class="status"></div>
+    </div>
+
+    <div id="report" style="display: none;">
+      <!-- 1. Financial Summary -->
+      <div class="card">
+        <h2>Финансовая сводка</h2>
+        <div class="summary-grid" id="summary-grid"></div>
+        <div id="summary-insight" class="insight"></div>
+      </div>
+
+      <!-- 2. Income vs Expenses Over Time -->
+      <div class="card">
+        <h2>Доходы и расходы по времени</h2>
+        <div class="chart-container">
+          <canvas id="income-expenses-chart"></canvas>
+        </div>
+        <p style="font-size: 14px; color: #9ca3af; margin-top: 12px;">
+          График показывает динамику ваших доходов и расходов. Обратите внимание на периоды, когда расходы превышают доходы.
+        </p>
+      </div>
+
+      <!-- 3. Expense Breakdown -->
+      <div class="card">
+        <h2>Распределение расходов</h2>
+        <div class="chart-container small">
+          <canvas id="expense-donut-chart"></canvas>
+        </div>
+        <div id="expense-insight" style="margin-top: 16px;"></div>
+      </div>
+
+      <!-- 4. Credits and Installments -->
+      <div class="card">
+        <h2>Кредиты и рассрочки</h2>
+        <div id="credit-analysis"></div>
+      </div>
+
+      <!-- 5. Money Leaks -->
+      <div class="card">
+        <h2>Незаметные траты</h2>
+        <div id="leak-analysis"></div>
+      </div>
+
+      <!-- 6. Recommendations -->
+      <div class="card">
+        <h2>Рекомендации</h2>
+        <div id="recommendations"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'https://bank-pdf-agent.onrender.com/analyze';
+    let incomeExpensesChart = null;
+    let expenseDonutChart = null;
+
+    function formatKZT(v) {
+      if (v === null || v === undefined || isNaN(v)) return '—';
+      return new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'KZT',
+        maximumFractionDigits: 0
+      }).format(v);
+    }
+
+    function formatPercent(v) {
+      return v.toFixed(1) + '%';
+    }
+
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 1000000) {
+        showStatus('Файл больше 1 МБ', true);
+        return;
+      }
+
+      showStatus('Анализируем выписку...');
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('bank', 'kaspi');
+      formData.append('currency', 'KZT');
+
+      try {
+        const res = await fetch(API_URL, { method: 'POST', body: formData });
+        if (!res.ok) throw new Error('Ошибка сервера: ' + res.status);
+        const data = await res.json();
+        showStatus('');
+        document.getElementById('upload-section').style.display = 'none';
+        document.getElementById('report').style.display = 'block';
+        renderReport(data);
+      } catch (err) {
+        showStatus('Ошибка: ' + err.message, true);
+      }
+    });
+
+    function showStatus(text, isError = false) {
+      const el = document.getElementById('status');
+      el.textContent = text;
+      el.className = isError ? 'status error' : 'status';
+    }
+
+    function renderReport(data) {
+      renderSummary(data);
+      renderIncomeExpensesChart(data);
+      renderExpenseDonut(data);
+      renderCreditAnalysis(data);
+      renderLeakAnalysis(data);
+      renderRecommendations(data);
+    }
+
+    function renderSummary(data) {
+      const totals = data.totals || {};
+      const net = totals.net || 0;
+      const income = totals.income || 0;
+      const spending = totals.spending || 0;
+      const diffPercent = income > 0 ? ((spending / income) * 100) : 0;
+
+      const grid = document.getElementById('summary-grid');
+      grid.innerHTML = `
+        <div class="summary-item">
+          <div class="summary-label">Доходы</div>
+          <div class="summary-value positive">${formatKZT(income)}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Расходы</div>
+          <div class="summary-value negative">${formatKZT(spending)}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Итоговый результат</div>
+          <div class="summary-value ${net >= 0 ? 'positive' : 'negative'}">${formatKZT(net)}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Расходы от доходов</div>
+          <div class="summary-value ${diffPercent <= 100 ? 'positive' : 'negative'}">${formatPercent(diffPercent)}</div>
+        </div>
+      `;
+
+      const insight = document.getElementById('summary-insight');
+      if (net >= 0) {
+        insight.className = 'insight';
+        insight.textContent = `✅ Вы в плюсе! За период вы заработали на ${formatKZT(net)} больше, чем потратили. Это хороший знак для вашего финансового здоровья.`;
+      } else {
+        insight.className = 'insight warning';
+        insight.textContent = `⚠️ Ваши расходы превышают доходы на ${formatKZT(Math.abs(net))}. Необходимо либо увеличить доходы, либо сократить расходы, чтобы избежать долгов.`;
+      }
+    }
+
+    function renderIncomeExpensesChart(data) {
+      const monthly = data.monthly_summary || [];
+      if (monthly.length === 0) return;
+
+      const ctx = document.getElementById('income-expenses-chart').getContext('2d');
+      if (incomeExpensesChart) incomeExpensesChart.destroy();
+
+      incomeExpensesChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: monthly.map(m => m.month),
+          datasets: [{
+            label: 'Доходы',
+            data: monthly.map(m => m.income),
+            borderColor: '#22c55e',
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            tension: 0.4,
+            fill: true
+          }, {
+            label: 'Расходы',
+            data: monthly.map(m => m.spending),
+            borderColor: '#f97373',
+            backgroundColor: 'rgba(249, 115, 115, 0.1)',
+            tension: 0.4,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#e5e7eb' } }
+          },
+          scales: {
+            x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(148, 163, 184, 0.1)' } },
+            y: { ticks: { color: '#9ca3af', callback: (v) => formatKZT(v) }, grid: { color: 'rgba(148, 163, 184, 0.1)' } }
+          }
+        }
+      });
+    }
+
+    function renderExpenseDonut(data) {
+      const categories = (data.category_breakdown || []).filter(c => c.spending > 0);
+      if (categories.length === 0) return;
+
+      const ctx = document.getElementById('expense-donut-chart').getContext('2d');
+      if (expenseDonutChart) expenseDonutChart.destroy();
+
+      const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#ef4444', '#14b8a6'];
+      const total = categories.reduce((sum, c) => sum + c.spending, 0);
+
+      expenseDonutChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: categories.map(c => c.category),
+          datasets: [{
+            data: categories.map(c => c.spending),
+            backgroundColor: colors.slice(0, categories.length),
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#e5e7eb', padding: 15 } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const label = ctx.label || '';
+                  const value = ctx.parsed || 0;
+                  const percent = ((value / total) * 100).toFixed(1);
+                  return `${label}: ${formatKZT(value)} (${percent}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const transfers = categories.find(c => c.category === 'transfers');
+      const insight = document.getElementById('expense-insight');
+      if (transfers && transfers.spending > total * 0.4) {
+        insight.innerHTML = `<div class="insight warning">⚠️ Переводы составляют ${formatPercent((transfers.spending / total) * 100)} ваших расходов. Убедитесь, что все переводы необходимы.</div>`;
+      } else {
+        const topCat = categories[0];
+        insight.innerHTML = `<div class="insight">💡 Больше всего вы тратите на "${topCat.category}" — ${formatPercent((topCat.spending / total) * 100)} всех расходов.</div>`;
+      }
+    }
+
+    function renderCreditAnalysis(data) {
+      const credit = data.credit_analysis || {};
+      const container = document.getElementById('credit-analysis');
+
+      if (!credit.total_monthly || credit.total_monthly === 0) {
+        container.innerHTML = '<p style="color: #9ca3af;">Кредитные платежи не обнаружены в выписке.</p>';
+        return;
+      }
+
+      const warningClass = credit.warning_level || 'low';
+      const warningText = {
+        low: 'Низкая нагрузка',
+        medium: 'Средняя нагрузка — стоит обратить внимание',
+        high: 'Высокая нагрузка — требуется срочное внимание'
+      };
+
+      container.innerHTML = `
+        <div class="credit-warning ${warningClass}">
+          <h3 style="margin-bottom: 12px;">${warningText[warningClass]}</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 16px;">
+            <div>
+              <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Средний платеж в месяц</div>
+              <div style="font-size: 24px; font-weight: 700; color: ${warningClass === 'high' ? '#f97373' : '#fbbf24'}">${formatKZT(credit.total_monthly)}</div>
+            </div>
+            <div>
+              <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">% от всех расходов</div>
+              <div style="font-size: 24px; font-weight: 700; color: ${warningClass === 'high' ? '#f97373' : '#fbbf24'}">${formatPercent(credit.percentage_of_expenses)}</div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (credit.recurring_payments && credit.recurring_payments.length > 0) {
+        container.innerHTML += '<h3 style="margin-top: 24px;">Регулярные платежи:</h3>';
+        credit.recurring_payments.forEach(p => {
+          container.innerHTML += `
+            <div class="leak-item">
+              <div>
+                <div style="font-weight: 600;">${p.merchant}</div>
+                <div style="font-size: 12px; color: #9ca3af;">${p.frequency} платеж(ей)</div>
+              </div>
+              <div style="font-weight: 700; color: #f97373;">${formatKZT(p.monthly_amount)}</div>
+            </div>
+          `;
+        });
+      }
+    }
+
+    function renderLeakAnalysis(data) {
+      const leaks = data.money_leaks || {};
+      const container = document.getElementById('leak-analysis');
+
+      if (!leaks.leak_sources || leaks.leak_sources.length === 0) {
+        container.innerHTML = '<p style="color: #9ca3af;">Значительных незаметных трат не обнаружено.</p>';
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="insight warning">
+          💸 Обнаружено ${leaks.leak_sources.length} источников незаметных трат, которые в сумме составляют ${formatKZT(leaks.total_monthly)} в месяц.
+        </div>
+        <div style="margin-top: 16px;">
+          ${leaks.leak_sources.map(leak => `
+            <div class="leak-item">
+              <div>
+                <div style="font-weight: 600;">${leak.merchant}</div>
+                <div style="font-size: 12px; color: #9ca3af;">${leak.count} транзакций, средняя: ${formatKZT(leak.avg)}</div>
+              </div>
+              <div style="font-weight: 700; color: #f97373;">${formatKZT(leak.total)}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderRecommendations(data) {
+      const recs = data.recommendations || [];
+      const container = document.getElementById('recommendations');
+
+      if (recs.length === 0) {
+        container.innerHTML = '<p style="color: #9ca3af;">Рекомендации недоступны.</p>';
+        return;
+      }
+
+      container.innerHTML = recs.map(rec => `
+        <div class="recommendation">
+          <div class="recommendation-title">${rec.title}</div>
+          <div class="recommendation-desc">${rec.description}</div>
+          <div class="recommendation-savings">
+            <span>Потенциальная экономия:</span>
+            <strong>${formatKZT(rec.monthly_savings)}/месяц</strong>
+            <span class="impact-badge impact-${rec.impact === 'Критический' || rec.impact === 'Высокий' ? 'high' : rec.impact === 'Средний' ? 'medium' : 'low'}">${rec.impact}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+  </script>
+</body>
+</html>

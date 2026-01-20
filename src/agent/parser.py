@@ -1,3 +1,4 @@
+import gc
 import re
 from datetime import datetime
 from typing import Iterable, List, Optional, Tuple
@@ -133,19 +134,34 @@ def _extract_text_transactions(lines: Iterable[str]) -> List[Transaction]:
     return transactions
 
 
-def extract_transactions(pdf_path: str) -> List[Transaction]:
-    """Parse transactions from a PDF bank statement."""
+def extract_transactions(pdf_path: str, max_pages: int = 100) -> List[Transaction]:
+    """Parse transactions from a PDF bank statement.
+    
+    Args:
+        pdf_path: Path to PDF file
+        max_pages: Maximum number of pages to process (to limit memory usage)
+    """
     transactions: List[Transaction] = []
     with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
+        total_pages = len(pdf.pages)
+        pages_to_process = min(total_pages, max_pages)
+        
+        for i, page in enumerate(pdf.pages[:pages_to_process]):
+            # Process tables first (more reliable for Kaspi)
             tables = page.extract_tables() or []
             for table in tables:
                 transactions.extend(_extract_table_transactions(table))
 
+            # Fallback to text extraction if no tables
             if not tables:
                 text = page.extract_text() or ""
                 lines = text.splitlines()
                 transactions.extend(_extract_text_transactions(lines))
+            
+            # Explicit cleanup after each page to free memory
+            del tables
+            if i % 10 == 0:  # Force GC every 10 pages
+                gc.collect()
 
     transactions.sort(key=lambda t: t.date)
     return transactions

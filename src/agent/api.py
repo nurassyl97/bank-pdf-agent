@@ -48,7 +48,8 @@ async def analyze(
         tmp_path.write_bytes(data)
 
         try:
-            txns = extract_transactions(str(tmp_path))
+            # Limit to 50 pages max to stay under 512MB memory limit on Render free tier
+            txns = extract_transactions(str(tmp_path), max_pages=50)
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {e}") from e
 

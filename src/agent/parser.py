@@ -17,8 +17,13 @@ AMOUNT_REGEX = re.compile(
 
 
 def _parse_date(text: str) -> Optional[datetime]:
+    """Parse date string, ensuring result is within reasonable bounds (2000-2100)."""
     try:
-        return date_parser.parse(text, dayfirst=True, yearfirst=False, fuzzy=True)
+        dt = date_parser.parse(text, dayfirst=True, yearfirst=False, fuzzy=True)
+        # Validate: year must be between 2000 and 2100 (reject misparsed dates like 3505)
+        if dt.year < 2000 or dt.year > 2100:
+            return None
+        return dt
     except (ValueError, OverflowError, TypeError):
         return None
 
@@ -160,7 +165,9 @@ def extract_transactions(pdf_path: str, max_pages: int = 100) -> List[Transactio
             
             # Explicit cleanup after each page to free memory
             del tables
-            if i % 10 == 0:  # Force GC every 10 pages
+            del page
+            # Force GC every 5 pages to be more aggressive
+            if (i + 1) % 5 == 0:
                 gc.collect()
 
     transactions.sort(key=lambda t: t.date)

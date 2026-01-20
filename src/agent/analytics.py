@@ -14,6 +14,12 @@ from .models import Transaction
 def _to_df(transactions: List[Transaction]) -> pd.DataFrame:
     rows = []
     for t in transactions:
+        # Skip transactions with invalid dates (shouldn't happen, but safety check)
+        if t.date is None:
+            continue
+        # Double-check date is reasonable (2000-2100)
+        if t.date.year < 2000 or t.date.year > 2100:
+            continue
         rows.append(
             {
                 "date": t.date,
@@ -25,7 +31,10 @@ def _to_df(transactions: List[Transaction]) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=["date", "description", "amount", "balance"])
     df = pd.DataFrame(rows)
-    df["date"] = pd.to_datetime(df["date"])
+    # Use errors='coerce' to handle any edge cases gracefully
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    # Drop rows where date conversion failed
+    df = df.dropna(subset=["date"])
     df = df.sort_values("date").reset_index(drop=True)
     return df
 

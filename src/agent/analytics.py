@@ -328,7 +328,10 @@ def _calculate_health_score(
     
     # Factor 3: Savings buffer (0-20 points)
     closing_balance = balances.get("closing", 0.0) or 0.0
-    monthly_expenses = spending / max(1, len(totals.get("months", [1]))) if spending > 0 else spending
+    months_in_period = totals.get("months", 1)
+    if isinstance(months_in_period, list):
+        months_in_period = len(months_in_period)
+    monthly_expenses = spending / max(1, float(months_in_period)) if spending > 0 else spending
     # Approximate months from data period
     months_covered = (closing_balance / monthly_expenses) if monthly_expenses > 0 else 0
     if months_covered >= 6:

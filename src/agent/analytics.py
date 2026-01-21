@@ -276,6 +276,339 @@ def _detect_money_leaks(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
+def _calculate_health_score(
+    totals: Dict[str, float],
+    credit_analysis: Dict[str, Any],
+    leak_analysis: Dict[str, Any],
+    balances: Dict[str, Optional[float]],
+) -> Dict[str, Any]:
+    """Calculate Financial Health Score (0-100) based on multiple factors."""
+    score = 100.0
+    factors = []
+    
+    income = totals.get("income", 0.0)
+    spending = totals.get("spending", 0.0)
+    net = totals.get("net", 0.0)
+    
+    # Factor 1: Expenses-to-income ratio (0-30 points)
+    if income > 0:
+        expense_ratio = (spending / income) * 100
+        if expense_ratio <= 70:
+            exp_score = 30
+            factors.append({"name": "Соотношение расходов к доходам", "score": exp_score, "max": 30, "note": "Отличное соотношение"})
+        elif expense_ratio <= 85:
+            exp_score = 20
+            factors.append({"name": "Соотношение расходов к доходам", "score": exp_score, "max": 30, "note": "Хорошее соотношение"})
+        elif expense_ratio <= 100:
+            exp_score = 10
+            factors.append({"name": "Соотношение расходов к доходам", "score": exp_score, "max": 30, "note": "Расходы равны доходам"})
+        else:
+            exp_score = 0
+            factors.append({"name": "Соотношение расходов к доходам", "score": exp_score, "max": 30, "note": "Расходы превышают доходы"})
+        score = score - (30 - exp_score)
+    else:
+        factors.append({"name": "Соотношение расходов к доходам", "score": 0, "max": 30, "note": "Нет доходов"})
+        score -= 30
+    
+    # Factor 2: Credit load (0-25 points)
+    credit_pct = credit_analysis.get("percentage_of_expenses", 0.0)
+    if credit_pct <= 10:
+        credit_score = 25
+        factors.append({"name": "Кредитная нагрузка", "score": credit_score, "max": 25, "note": "Низкая нагрузка"})
+    elif credit_pct <= 20:
+        credit_score = 20
+        factors.append({"name": "Кредитная нагрузка", "score": credit_score, "max": 25, "note": "Умеренная нагрузка"})
+    elif credit_pct <= 30:
+        credit_score = 10
+        factors.append({"name": "Кредитная нагрузка", "score": credit_score, "max": 25, "note": "Высокая нагрузка"})
+    else:
+        credit_score = 0
+        factors.append({"name": "Кредитная нагрузка", "score": credit_score, "max": 25, "note": "Критическая нагрузка"})
+    score = score - (25 - credit_score)
+    
+    # Factor 3: Savings buffer (0-20 points)
+    closing_balance = balances.get("closing", 0.0) or 0.0
+    monthly_expenses = spending / max(1, len(totals.get("months", [1]))) if spending > 0 else spending
+    # Approximate months from data period
+    months_covered = (closing_balance / monthly_expenses) if monthly_expenses > 0 else 0
+    if months_covered >= 6:
+        buffer_score = 20
+        factors.append({"name": "Финансовая подушка", "score": buffer_score, "max": 20, "note": f"Хватит на {months_covered:.1f} месяцев"})
+    elif months_covered >= 3:
+        buffer_score = 15
+        factors.append({"name": "Финансовая подушка", "score": buffer_score, "max": 20, "note": f"Хватит на {months_covered:.1f} месяцев"})
+    elif months_covered >= 1:
+        buffer_score = 8
+        factors.append({"name": "Финансовая подушка", "score": buffer_score, "max": 20, "note": f"Хватит только на {months_covered:.1f} месяц"})
+    else:
+        buffer_score = 0
+        factors.append({"name": "Финансовая подушка", "score": buffer_score, "max": 20, "note": "Нет финансовой подушки"})
+    score = score - (20 - buffer_score)
+    
+    # Factor 4: Money leaks (0-15 points)
+    leak_total = leak_analysis.get("total_monthly", 0.0)
+    leak_pct = (leak_total / spending * 100) if spending > 0 else 0
+    if leak_pct <= 5:
+        leak_score = 15
+        factors.append({"name": "Незаметные траты", "score": leak_score, "max": 15, "note": "Минимальные незаметные траты"})
+    elif leak_pct <= 10:
+        leak_score = 10
+        factors.append({"name": "Незаметные траты", "score": leak_score, "max": 15, "note": "Умеренные незаметные траты"})
+    elif leak_pct <= 20:
+        leak_score = 5
+        factors.append({"name": "Незаметные траты", "score": leak_score, "max": 15, "note": "Высокие незаметные траты"})
+    else:
+        leak_score = 0
+        factors.append({"name": "Незаметные траты", "score": leak_score, "max": 15, "note": "Критический уровень незаметных трат"})
+    score = score - (15 - leak_score)
+    
+    # Factor 5: Net result (0-10 points)
+    if net > 0:
+        net_score = 10
+        factors.append({"name": "Итоговый результат", "score": net_score, "max": 10, "note": "Положительный баланс"})
+    else:
+        net_score = 0
+        factors.append({"name": "Итоговый результат", "score": net_score, "max": 10, "note": "Отрицательный баланс"})
+    score = score - (10 - net_score)
+    
+    score = max(0, min(100, score))  # Clamp to 0-100
+    
+    if score >= 80:
+        status = "Отлично"
+        status_color = "positive"
+    elif score >= 60:
+        status = "Хорошо"
+        status_color = "positive"
+    elif score >= 40:
+        status = "Риск"
+        status_color = "warning"
+    else:
+        status = "Опасность"
+        status_color = "negative"
+    
+    return {
+        "score": round(score, 1),
+        "status": status,
+        "status_color": status_color,
+        "factors": factors,
+        "explanation": _get_health_explanation(score, status),
+    }
+
+
+def _get_health_explanation(score: float, status: str) -> str:
+    """Generate human-readable explanation for health score."""
+    if score >= 80:
+        return "Ваши финансы в отличном состоянии. Вы контролируете расходы, кредитная нагрузка приемлема, и есть финансовая подушка. Продолжайте в том же духе."
+    elif score >= 60:
+        return "Ваши финансы в порядке, но есть области для улучшения. Обратите внимание на кредитную нагрузку и незаметные траты — они могут подорвать стабильность."
+    elif score >= 40:
+        return "Ваши финансы находятся в зоне риска. Расходы слишком высоки относительно доходов, или кредитная нагрузка критична. Нужны срочные меры для стабилизации."
+    else:
+        return "Ваши финансы в критическом состоянии. Расходы превышают доходы, высокие кредитные обязательства, нет финансовой подушки. Необходимы радикальные изменения."
+
+
+def _calculate_safety_buffer(
+    spending: float,
+    closing_balance: Optional[float],
+    monthly_summary: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Calculate how many months user can survive without income."""
+    if closing_balance is None or closing_balance < 0:
+        return {
+            "months": 0.0,
+            "status": "Нет подушки",
+            "status_color": "negative",
+            "explanation": "У вас нет финансовой подушки. В случае потери дохода вы окажетесь в сложной ситуации.",
+            "monthly_expenses": spending / max(1, len(monthly_summary)) if monthly_summary else spending,
+        }
+    
+    avg_monthly_spending = spending / max(1, len(monthly_summary)) if monthly_summary else spending
+    if avg_monthly_spending <= 0:
+        months = 0.0
+    else:
+        months = closing_balance / avg_monthly_spending
+    
+    if months >= 6:
+        status = "Безопасно"
+        status_color = "positive"
+        explanation = f"Ваша финансовая подушка покрывает {months:.1f} месяцев расходов. Это отличный показатель финансовой безопасности."
+    elif months >= 3:
+        status = "Приемлемо"
+        status_color = "positive"
+        explanation = f"Ваша финансовая подушка покрывает {months:.1f} месяцев расходов. Это хороший уровень, но можно увеличить до 6 месяцев."
+    elif months >= 1:
+        status = "Слабо"
+        status_color = "warning"
+        explanation = f"Ваша финансовая подушка покрывает только {months:.1f} месяца расходов. Это рискованно. Старайтесь накопить минимум 3 месяца расходов."
+    else:
+        status = "Критично"
+        status_color = "negative"
+        explanation = "У вас нет финансовой подушки безопасности. В случае непредвиденных обстоятельств вы можете оказаться в долгах. Немедленно начните откладывать."
+    
+    return {
+        "months": round(months, 1),
+        "status": status,
+        "status_color": status_color,
+        "explanation": explanation,
+        "monthly_expenses": avg_monthly_spending,
+        "buffer_amount": closing_balance,
+    }
+
+
+def _generate_future_scenarios(
+    totals: Dict[str, float],
+    credit_analysis: Dict[str, Any],
+    recommendations: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Generate 3 financial forecasting scenarios."""
+    current_income = totals.get("income", 0.0)
+    current_spending = totals.get("spending", 0.0)
+    current_net = totals.get("net", 0.0)
+    
+    # Approximate months from period (assuming 1 month if we don't know)
+    months_in_period = 1.0  # Default assumption
+    
+    monthly_income = current_income / months_in_period
+    monthly_spending = current_spending / months_in_period
+    monthly_net = current_net / months_in_period
+    
+    # Scenario 1: If nothing changes
+    scenario1 = {
+        "title": "Если ничего не менять",
+        "description": "Текущая ситуация сохранится без изменений",
+        "monthly_balance": monthly_net,
+        "6_month_outcome": monthly_net * 6,
+        "12_month_outcome": monthly_net * 12,
+        "risk_level": "high" if monthly_net < 0 else "medium",
+        "summary": f"Через 6 месяцев: {monthly_net * 6:+,.0f} KZT. Через год: {monthly_net * 12:+,.0f} KZT." if monthly_net != 0 else "Баланс не изменится.",
+    }
+    
+    # Scenario 2: If recommendations are followed
+    total_savings = sum(r.get("monthly_savings", 0.0) for r in recommendations)
+    scenario2_monthly = monthly_net + total_savings
+    scenario2 = {
+        "title": "Если следовать рекомендациям",
+        "description": f"Реализуете все рекомендации (экономия ~{total_savings:,.0f} KZT/месяц)",
+        "monthly_balance": scenario2_monthly,
+        "6_month_outcome": scenario2_monthly * 6,
+        "12_month_outcome": scenario2_monthly * 12,
+        "risk_level": "low" if scenario2_monthly > 0 else "medium",
+        "summary": f"Через 6 месяцев: {scenario2_monthly * 6:+,.0f} KZT. Через год: {scenario2_monthly * 12:+,.0f} KZT. Экономия: {total_savings:,.0f} KZT/месяц.",
+    }
+    
+    # Scenario 3: If credit load is optimized
+    current_credit_monthly = credit_analysis.get("total_monthly", 0.0)
+    credit_reduction = current_credit_monthly * 0.3 if credit_analysis.get("percentage_of_expenses", 0) > 25 else 0.0
+    scenario3_monthly = monthly_net + credit_reduction
+    scenario3 = {
+        "title": "Если оптимизировать кредиты",
+        "description": f"Снизить кредитную нагрузку на 30% (экономия ~{credit_reduction:,.0f} KZT/месяц)" if credit_reduction > 0 else "Кредитная нагрузка уже оптимальна",
+        "monthly_balance": scenario3_monthly,
+        "6_month_outcome": scenario3_monthly * 6,
+        "12_month_outcome": scenario3_monthly * 12,
+        "risk_level": "low" if scenario3_monthly > 0 else "medium",
+        "summary": f"Через 6 месяцев: {scenario3_monthly * 6:+,.0f} KZT. Через год: {scenario3_monthly * 12:+,.0f} KZT." if credit_reduction > 0 else "Изменения минимальны.",
+    }
+    
+    return [scenario1, scenario2, scenario3]
+
+
+def _generate_action_plan(
+    recommendations: List[Dict[str, Any]],
+    credit_analysis: Dict[str, Any],
+    leak_analysis: Dict[str, Any],
+) -> List[Dict[str, str]]:
+    """Generate a concrete 30-day action plan."""
+    actions = []
+    
+    # Action 1: Review top transfers/credits
+    if credit_analysis.get("percentage_of_expenses", 0) > 25:
+        actions.append({
+            "day": "День 1-3",
+            "action": "Проанализируйте все кредитные платежи и рассрочки",
+            "how": "Откройте раздел 'Кредиты и рассрочки' и проверьте каждый платеж. Найдите возможности рефинансирования или досрочного погашения.",
+        })
+    
+    # Action 2: Address money leaks
+    top_leak = leak_analysis.get("leak_sources", [{}])[0] if leak_analysis.get("leak_sources") else None
+    if top_leak:
+        actions.append({
+            "day": "День 4-7",
+            "action": f"Сократите траты на '{top_leak.get('merchant', 'определенный магазин')}'",
+            "how": f"Эта категория трат составляет {top_leak.get('total', 0):,.0f} KZT в месяц. Определите, какие из этих покупок действительно необходимы.",
+        })
+    
+    # Action 3: Set spending limits
+    if leak_analysis.get("total_monthly", 0) > 20000:
+        actions.append({
+            "day": "День 8-14",
+            "action": "Установите лимиты на часто используемые категории",
+            "how": "В приложении Kaspi установите дневные или месячные лимиты на доставку еды, развлечения и другие категории с высокими незаметными тратами.",
+        })
+    
+    # Action 4: Review recurring payments
+    recurring = credit_analysis.get("recurring_payments", [])
+    if recurring:
+        actions.append({
+            "day": "День 15-21",
+            "action": "Проверьте регулярные платежи и подписки",
+            "how": f"У вас {len(recurring)} регулярных платежа. Проверьте, используете ли вы все эти услуги. Отмените неиспользуемые подписки.",
+        })
+    
+    # Action 5: Create savings plan
+    actions.append({
+        "day": "День 22-30",
+        "action": "Начните откладывать на финансовую подушку",
+        "how": "Определите сумму, которую можете откладывать ежемесячно (даже 10,000 KZT — хорошее начало). Настройте автоматический перевод на накопительный счет.",
+    })
+    
+    return actions[:5]  # Max 5 actions
+
+
+def _calculate_before_after(
+    totals: Dict[str, float],
+    credit_analysis: Dict[str, Any],
+    leak_analysis: Dict[str, Any],
+    recommendations: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Calculate before/after comparison after implementing recommendations."""
+    current_net = totals.get("net", 0.0)
+    current_credit_pct = credit_analysis.get("percentage_of_expenses", 0.0)
+    current_leaks = leak_analysis.get("total_monthly", 0.0)
+    
+    total_savings = sum(r.get("monthly_savings", 0.0) for r in recommendations)
+    future_net = current_net + total_savings
+    
+    # Estimate future credit percentage (assume 20% reduction in credit spending)
+    credit_reduction = credit_analysis.get("total_monthly", 0.0) * 0.2
+    future_credit_spending = credit_analysis.get("total_monthly", 0.0) - credit_reduction
+    future_total_spending = totals.get("spending", 0.0) - total_savings
+    future_credit_pct = (future_credit_spending / future_total_spending * 100) if future_total_spending > 0 else 0
+    
+    # Estimate leak reduction (assume 50% reduction)
+    future_leaks = current_leaks * 0.5
+    
+    return {
+        "current": {
+            "net_balance": current_net,
+            "credit_percentage": current_credit_pct,
+            "money_leaks": current_leaks,
+            "monthly_savings_potential": 0.0,
+        },
+        "after": {
+            "net_balance": future_net,
+            "credit_percentage": future_credit_pct,
+            "money_leaks": future_leaks,
+            "monthly_savings_potential": total_savings,
+        },
+        "improvement": {
+            "net_change": future_net - current_net,
+            "credit_reduction": current_credit_pct - future_credit_pct,
+            "leak_reduction": current_leaks - future_leaks,
+        },
+    }
+
+
 def _generate_recommendations(
     totals: Dict[str, float],
     credit_analysis: Dict[str, Any],
@@ -411,11 +744,47 @@ def build_analysis(
     category_breakdown = _category_breakdown(df)
     credit_analysis = _detect_credits(df)
     leak_analysis = _detect_money_leaks(df)
+    
+    totals_dict = {"income": total_income, "spending": total_spending, "net": net, "months": len(monthly)}
+    balances_dict = {"opening": opening_balance, "closing": closing_balance}
+    
     recommendations = _generate_recommendations(
-        {"income": total_income, "spending": total_spending, "net": net},
+        totals_dict,
         credit_analysis,
         leak_analysis,
         category_breakdown,
+    )
+    
+    health_score = _calculate_health_score(
+        totals_dict,
+        credit_analysis,
+        leak_analysis,
+        balances_dict,
+    )
+    
+    safety_buffer = _calculate_safety_buffer(
+        total_spending,
+        closing_balance,
+        monthly,
+    )
+    
+    future_scenarios = _generate_future_scenarios(
+        totals_dict,
+        credit_analysis,
+        recommendations,
+    )
+    
+    action_plan = _generate_action_plan(
+        recommendations,
+        credit_analysis,
+        leak_analysis,
+    )
+    
+    before_after = _calculate_before_after(
+        totals_dict,
+        credit_analysis,
+        leak_analysis,
+        recommendations,
     )
 
     return {
@@ -431,10 +800,7 @@ def build_analysis(
             "spending": total_spending,
             "net": net,
         },
-        "balances": {
-            "opening": opening_balance,
-            "closing": closing_balance,
-        },
+        "balances": balances_dict,
         "category_breakdown": category_breakdown,
         "weekly_summary": weekly,
         "monthly_summary": monthly,
@@ -443,6 +809,11 @@ def build_analysis(
         "credit_analysis": credit_analysis,
         "money_leaks": leak_analysis,
         "recommendations": recommendations,
+        "health_score": health_score,
+        "safety_buffer": safety_buffer,
+        "future_scenarios": future_scenarios,
+        "action_plan": action_plan,
+        "before_after": before_after,
         "transactions": [
             {
                 "date": t.date.isoformat(),

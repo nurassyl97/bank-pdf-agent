@@ -230,14 +230,23 @@
 
       try {
         const res = await fetch(API_URL, { method: 'POST', body: formData });
-        if (!res.ok) throw new Error('Ошибка сервера: ' + res.status);
+        if (!res.ok) {
+          let errorDetail = 'Ошибка сервера: ' + res.status;
+          try {
+            const errorData = await res.json();
+            if (errorData.detail) errorDetail = errorData.detail;
+          } catch (_) {}
+          throw new Error(errorDetail);
+        }
         const data = await res.json();
         showStatus('');
         document.getElementById('upload-section').style.display = 'none';
         document.getElementById('report').style.display = 'block';
         renderReport(data);
       } catch (err) {
-        showStatus('Ошибка: ' + err.message, true);
+        console.error('Upload error:', err);
+        const errorMsg = err.message || 'Не удалось загрузить файл. Проверьте подключение к интернету и попробуйте снова.';
+        showStatus('Ошибка: ' + errorMsg, true);
       }
     });
 

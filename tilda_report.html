@@ -104,17 +104,54 @@
     #file-input { display: none; }
     .status { margin-top: 16px; font-size: 14px; color: #9ca3af; }
     .status.error { color: #f97373; }
+    .question { margin-bottom: 24px; }
+    .question-label { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #cbd5e1; }
+    .question-options { display: flex; flex-direction: column; gap: 10px; }
+    .option-btn {
+      padding: 12px 16px; background: rgba(2,6,23,0.6); border: 2px solid rgba(55,65,81,0.5);
+      border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;
+      color: #e5e7eb; font-size: 14px;
+    }
+    .option-btn:hover { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+    .option-btn.selected { border-color: #3b82f6; background: rgba(59,130,246,0.2); }
+    .questionnaire-nav { display: flex; justify-content: space-between; margin-top: 32px; }
+    .nav-btn { padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; }
+    .nav-btn.primary { background: linear-gradient(135deg, #22c55e, #a3e635); color: #0b1120; }
+    .nav-btn.secondary { background: rgba(55,65,81,0.5); color: #e5e7eb; }
+    .question-number { font-size: 12px; color: #9ca3af; margin-bottom: 8px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <div id="upload-section" class="card upload-section">
-      <h1>Kaspi Gold — анализ выписки</h1>
-      <p style="margin: 16px 0; color: #9ca3af;">
-        Загрузите PDF-выписку Kaspi (до 1 МБ) для получения детального финансового отчета
+    <!-- Onboarding Questionnaire -->
+    <div id="onboarding-section" class="card">
+      <h1>Персональный финансовый анализ</h1>
+      <p style="margin: 16px 0; color: #9ca3af; text-align: center;">
+        Ответьте на несколько вопросов, чтобы получить максимально точный анализ ваших финансов
       </p>
-      <button class="btn" onclick="document.getElementById('file-input').click()">Начать анализ</button>
-      <input type="file" id="file-input" accept="application/pdf" />
+      <div id="questionnaire"></div>
+    </div>
+
+    <!-- File Upload Section (hidden initially) -->
+    <div id="upload-section" class="card upload-section" style="display: none;">
+      <h2>Загрузка выписок</h2>
+      <p style="margin: 16px 0; color: #9ca3af;">
+        Теперь загрузите ваши выписки для анализа
+      </p>
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 600;">Обычная выписка (обязательно):</label>
+        <input type="file" id="file-input" accept="application/pdf" style="display: none;" />
+        <button class="btn" onclick="document.getElementById('file-input').click()" style="width: 100%; margin-bottom: 12px;">Выбрать обычную выписку</button>
+        <div id="file-name" style="font-size: 13px; color: #9ca3af;"></div>
+      </div>
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 600;">Кредитная выписка (опционально):</label>
+        <input type="file" id="credit-file-input" accept="application/pdf" style="display: none;" />
+        <button class="btn" onclick="document.getElementById('credit-file-input').click()" style="width: 100%; margin-bottom: 12px; background: linear-gradient(135deg, #3b82f6, #60a5fa);">Выбрать кредитную выписку</button>
+        <div id="credit-file-name" style="font-size: 13px; color: #9ca3af;"></div>
+        <p style="font-size: 12px; color: #9ca3af; margin-top: 8px;">Если у вас есть отдельная выписка по кредитам и займам, загрузите её для более точного анализа</p>
+      </div>
+      <button class="btn" id="analyze-btn" onclick="startAnalysis()" style="width: 100%; background: linear-gradient(135deg, #22c55e, #a3e635);">Начать анализ</button>
       <div id="status" class="status"></div>
     </div>
 
@@ -123,6 +160,24 @@
       <div class="card">
         <h2>Оценка финансового здоровья</h2>
         <div id="health-score" style="text-align: center; padding: 24px 0;"></div>
+      </div>
+
+      <!-- Credit Risk Index (if available) -->
+      <div id="credit-risk-section" class="card" style="display: none;">
+        <h2>Индекс кредитного риска</h2>
+        <div id="credit-risk"></div>
+      </div>
+
+      <!-- Real Income Analysis (if available) -->
+      <div id="real-income-section" class="card" style="display: none;">
+        <h2>Реальный доход</h2>
+        <div id="real-income"></div>
+      </div>
+
+      <!-- Credit Statement Analysis (if available) -->
+      <div id="credit-statement-section" class="card" style="display: none;">
+        <h2>Анализ кредитной выписки</h2>
+        <div id="credit-statement-analysis"></div>
       </div>
 
       <!-- 1. Financial Summary -->
@@ -214,19 +269,196 @@
       return v.toFixed(1) + '%';
     }
 
-    document.getElementById('file-input').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (file.size > 1000000) {
-        showStatus('Файл больше 1 МБ', true);
+    // Onboarding questionnaire state
+    let questionnaireAnswers = {
+      has_credits: false,
+      credit_load_perception: 'low',
+      financial_safety_months: null,
+      has_savings: false,
+      savings_amount: null,
+      financial_behavior: 'reactive',
+      primary_goal: 'stabilize',
+      ready_for_real_picture: true,
+    };
+    let currentQuestion = 0;
+
+    const questions = [
+      {
+        id: 'has_credits',
+        label: 'Есть ли у вас кредиты, займы или рассрочки?',
+        type: 'boolean',
+        options: [
+          { value: true, label: 'Да, есть' },
+          { value: false, label: 'Нет, кредитов нет' },
+        ],
+      },
+      {
+        id: 'credit_load_perception',
+        label: 'Как вы оцениваете свою кредитную нагрузку?',
+        type: 'select',
+        options: [
+          { value: 'low', label: 'Низкая — кредиты не мешают жить' },
+          { value: 'medium', label: 'Средняя — чувствую нагрузку, но управляю' },
+          { value: 'high', label: 'Высокая — кредиты отнимают много денег' },
+          { value: 'very_high', label: 'Очень высокая — кредиты — основная проблема' },
+        ],
+      },
+      {
+        id: 'financial_safety_months',
+        label: 'На сколько месяцев хватит ваших сбережений, если доход прекратится?',
+        type: 'number',
+        options: [
+          { value: 0, label: 'Меньше месяца' },
+          { value: 1, label: '1 месяц' },
+          { value: 3, label: '2-3 месяца' },
+          { value: 6, label: '4-6 месяцев' },
+          { value: 12, label: 'Больше 6 месяцев' },
+        ],
+      },
+      {
+        id: 'has_savings',
+        label: 'Есть ли у вас накопления или сбережения?',
+        type: 'boolean',
+        options: [
+          { value: true, label: 'Да, есть накопления' },
+          { value: false, label: 'Нет накоплений' },
+        ],
+      },
+      {
+        id: 'financial_behavior',
+        label: 'Как вы обычно управляете финансами?',
+        type: 'select',
+        options: [
+          { value: 'planned', label: 'Планирую заранее, веду бюджет' },
+          { value: 'mixed', label: 'Частично планирую, частично по ситуации' },
+          { value: 'reactive', label: 'Реагирую на ситуацию, когда нужно' },
+        ],
+      },
+      {
+        id: 'primary_goal',
+        label: 'Какая ваша главная финансовая цель?',
+        type: 'select',
+        options: [
+          { value: 'reduce_debt', label: 'Снизить долги и кредиты' },
+          { value: 'save', label: 'Накопить и создать подушку безопасности' },
+          { value: 'stabilize', label: 'Стабилизировать бюджет и расходы' },
+        ],
+      },
+      {
+        id: 'ready_for_real_picture',
+        label: 'Готовы ли вы увидеть реальную картину ваших финансов, даже если она будет неприятной?',
+        type: 'boolean',
+        options: [
+          { value: true, label: 'Да, хочу знать правду' },
+          { value: false, label: 'Предпочитаю мягкий анализ' },
+        ],
+      },
+    ];
+
+    function renderQuestion() {
+      if (currentQuestion >= questions.length) {
+        // Questionnaire complete, show upload section
+        document.getElementById('onboarding-section').style.display = 'none';
+        document.getElementById('upload-section').style.display = 'block';
         return;
       }
 
-      showStatus('Анализируем выписку...');
+      const question = questions[currentQuestion];
+      const container = document.getElementById('questionnaire');
+      
+      container.innerHTML = `
+        <div class="question-number">Вопрос ${currentQuestion + 1} из ${questions.length}</div>
+        <div class="question">
+          <div class="question-label">${question.label}</div>
+          <div class="question-options">
+            ${question.options.map(opt => `
+              <button class="option-btn ${getAnswerValue(question.id) === opt.value ? 'selected' : ''}" 
+                      onclick="selectAnswer('${question.id}', ${JSON.stringify(opt.value).replace(/"/g, '&quot;')})">
+                ${opt.label}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="questionnaire-nav">
+          <button class="nav-btn secondary" onclick="prevQuestion()" ${currentQuestion === 0 ? 'disabled style="opacity:0.5"' : ''}>
+            Назад
+          </button>
+          <button class="nav-btn primary" onclick="nextQuestion()">
+            ${currentQuestion === questions.length - 1 ? 'Завершить' : 'Далее'}
+          </button>
+        </div>
+      `;
+    }
+
+    function getAnswerValue(questionId) {
+      return questionnaireAnswers[questionId];
+    }
+
+    function selectAnswer(questionId, value) {
+      questionnaireAnswers[questionId] = value;
+      renderQuestion();
+    }
+
+    function nextQuestion() {
+      if (currentQuestion < questions.length - 1) {
+        currentQuestion++;
+        renderQuestion();
+      } else {
+        // Complete questionnaire
+        renderQuestion();
+      }
+    }
+
+    function prevQuestion() {
+      if (currentQuestion > 0) {
+        currentQuestion--;
+        renderQuestion();
+      }
+    }
+
+    // File upload handlers
+    let regularFile = null;
+    let creditFile = null;
+
+    document.getElementById('file-input').addEventListener('change', (e) => {
+      regularFile = e.target.files[0];
+      document.getElementById('file-name').textContent = regularFile ? regularFile.name : '';
+    });
+
+    document.getElementById('credit-file-input').addEventListener('change', (e) => {
+      creditFile = e.target.files[0];
+      document.getElementById('credit-file-name').textContent = creditFile ? creditFile.name : 'Не выбрано';
+    });
+
+    async function startAnalysis() {
+      if (!regularFile) {
+        showStatus('Пожалуйста, выберите обычную выписку', true);
+        return;
+      }
+
+      if (regularFile.size > 1000000) {
+        showStatus('Обычная выписка больше 1 МБ', true);
+        return;
+      }
+
+      if (creditFile && creditFile.size > 1000000) {
+        showStatus('Кредитная выписка больше 1 МБ', true);
+        return;
+      }
+
+      showStatus('Анализируем выписки...');
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', regularFile);
       formData.append('bank', 'kaspi');
       formData.append('currency', 'KZT');
+      
+      // Add questionnaire
+      formData.append('questionnaire', JSON.stringify(questionnaireAnswers));
+      
+      // Add credit statement if provided
+      if (creditFile) {
+        formData.append('credit_statement', creditFile);
+      }
 
       try {
         const res = await fetch(API_URL, { method: 'POST', body: formData });
@@ -245,10 +477,13 @@
         renderReport(data);
       } catch (err) {
         console.error('Upload error:', err);
-        const errorMsg = err.message || 'Не удалось загрузить файл. Проверьте подключение к интернету и попробуйте снова.';
+        const errorMsg = err.message || 'Не удалось загрузить файлы. Проверьте подключение к интернету и попробуйте снова.';
         showStatus('Ошибка: ' + errorMsg, true);
       }
-    });
+    }
+
+    // Initialize questionnaire
+    renderQuestion();
 
     function showStatus(text, isError = false) {
       const el = document.getElementById('status');
@@ -257,6 +492,21 @@
     }
 
     function renderReport(data) {
+      // New sections for combined analysis
+      if (data.credit_risk_index) {
+        renderCreditRiskIndex(data.credit_risk_index);
+        document.getElementById('credit-risk-section').style.display = 'block';
+      }
+      if (data.real_income_analysis) {
+        renderRealIncome(data.real_income_analysis, data.totals);
+        document.getElementById('real-income-section').style.display = 'block';
+      }
+      if (data.credit_statement_analysis && Object.keys(data.credit_statement_analysis).length > 0) {
+        renderCreditStatementAnalysis(data.credit_statement_analysis);
+        document.getElementById('credit-statement-section').style.display = 'block';
+      }
+      
+      // Existing sections
       renderHealthScore(data);
       renderSummary(data);
       renderSafetyBuffer(data);
@@ -268,6 +518,117 @@
       renderBeforeAfter(data);
       renderActionPlan(data);
       renderRecommendations(data);
+    }
+
+    function renderCreditRiskIndex(risk) {
+      const levelColors = {
+        critical: '#f97373',
+        dangerous: '#f59e0b',
+        risky: '#fbbf24',
+        safe: '#22c55e',
+      };
+      const color = levelColors[risk.level] || '#9ca3af';
+      
+      document.getElementById('credit-risk').innerHTML = `
+        <div style="text-align: center; margin-bottom: 24px;">
+          <div style="font-size: 48px; font-weight: 700; color: ${color}; margin-bottom: 8px;">${risk.score}</div>
+          <div style="font-size: 20px; font-weight: 600; color: ${color}; margin-bottom: 16px;">${risk.label}</div>
+          <div style="font-size: 16px; color: #cbd5e1; max-width: 600px; margin: 0 auto; line-height: 1.6;">
+            ${risk.explanation}
+          </div>
+        </div>
+        ${risk.risk_factors && risk.risk_factors.length > 0 ? `
+          <div style="margin-top: 24px;">
+            <h3 style="margin-bottom: 12px;">Факторы риска:</h3>
+            ${risk.risk_factors.map(factor => `
+              <div style="padding: 12px; background: rgba(239,68,68,0.1); border-left: 3px solid #f97373; border-radius: 4px; margin-bottom: 8px; font-size: 14px; color: #cbd5e1;">
+                ⚠️ ${factor}
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      `;
+    }
+
+    function renderRealIncome(realIncome, totals) {
+      const creditDep = realIncome.credit_dependency_ratio || 0;
+      const isHighDependency = creditDep > 15;
+      
+      document.getElementById('real-income').innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px;">
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px;">
+            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Общий доход</div>
+            <div style="font-size: 24px; font-weight: 700; color: #cbd5e1;">${formatKZT(realIncome.total_income)}</div>
+          </div>
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px; border: 2px solid ${isHighDependency ? '#f97373' : '#22c55e'}40;">
+            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Кредитные поступления</div>
+            <div style="font-size: 24px; font-weight: 700; color: ${isHighDependency ? '#f97373' : '#9ca3af'};">${formatKZT(realIncome.credit_inflows)}</div>
+          </div>
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px; border: 2px solid #3b82f640;">
+            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Реальный доход</div>
+            <div style="font-size: 24px; font-weight: 700; color: #60a5fa;">${formatKZT(realIncome.real_income)}</div>
+          </div>
+        </div>
+        <div class="insight ${isHighDependency ? 'warning' : ''}" style="margin-top: 16px;">
+          ${isHighDependency 
+            ? `⚠️ Высокая зависимость от кредитов: ${formatPercent(creditDep)} вашего дохода — это кредитные поступления. Это означает, что без новых кредитов ваш реальный доход составляет ${formatKZT(realIncome.real_income)}.`
+            : `✅ Зависимость от кредитов: ${formatPercent(creditDep)} дохода. Ваш реальный доход (без кредитов) составляет ${formatKZT(realIncome.real_income)}.`
+          }
+        </div>
+      `;
+    }
+
+    function renderCreditStatementAnalysis(analysis) {
+      if (!analysis || Object.keys(analysis).length === 0) return;
+      
+      const hasRefinancing = analysis.refinancing_detected || false;
+      const spiralRisk = analysis.credit_spiral_risk || 'none';
+      
+      document.getElementById('credit-statement-analysis').innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px;">
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px;">
+            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Всего выдано кредитов</div>
+            <div style="font-size: 24px; font-weight: 700; color: #f97373;">${formatKZT(analysis.total_loans_issued || 0)}</div>
+          </div>
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px;">
+            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Всего погашено</div>
+            <div style="font-size: 24px; font-weight: 700; color: #22c55e;">${formatKZT(analysis.total_repayments || 0)}</div>
+          </div>
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px;">
+            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Оценочный активный долг</div>
+            <div style="font-size: 24px; font-weight: 700; color: ${(analysis.estimated_active_debt || 0) > 0 ? '#f97373' : '#22c55e'};">${formatKZT(analysis.estimated_active_debt || 0)}</div>
+          </div>
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px;">
+            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Частота кредитов</div>
+            <div style="font-size: 24px; font-weight: 700; color: #cbd5e1;">${analysis.loan_frequency || 0}</div>
+          </div>
+        </div>
+        ${hasRefinancing ? `
+          <div class="insight warning" style="margin-bottom: 16px;">
+            ⚠️ Обнаружены признаки рефинансирования: вы берете новые кредиты для погашения старых. Это опасная практика, которая может привести к кредитной спирали.
+          </div>
+        ` : ''}
+        ${spiralRisk !== 'none' ? `
+          <div class="insight warning" style="margin-bottom: 16px;">
+            ${spiralRisk === 'high' 
+              ? '🚨 КРИТИЧЕСКИЙ РИСК: Обнаружена кредитная спираль. Вы часто берете новые кредиты с увеличивающимися суммами. Это крайне опасно для вашего финансового здоровья.'
+              : '⚠️ Высокий риск: Частые новые кредиты могут привести к кредитной спирали.'
+            }
+          </div>
+        ` : ''}
+        ${analysis.loan_types && Object.keys(analysis.loan_types).length > 0 ? `
+          <div style="margin-top: 16px;">
+            <h3 style="margin-bottom: 12px;">Типы кредитов:</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              ${Object.entries(analysis.loan_types).map(([type, count]) => `
+                <span style="padding: 6px 12px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); border-radius: 999px; font-size: 13px; color: #60a5fa;">
+                  ${type}: ${count}
+                </span>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      `;
     }
 
     function renderHealthScore(data) {
@@ -462,15 +823,18 @@
     function renderSummary(data) {
       const totals = data.totals || {};
       const net = totals.net || 0;
-      const income = totals.income || 0;
+      const income = totals.real_income !== undefined ? totals.real_income : totals.income || 0;
+      const totalIncome = totals.income || 0;
       const spending = totals.spending || 0;
       const diffPercent = income > 0 ? ((spending / income) * 100) : 0;
 
       const grid = document.getElementById('summary-grid');
+      const showRealIncome = totals.real_income !== undefined && totals.real_income !== totalIncome;
       grid.innerHTML = `
         <div class="summary-item">
-          <div class="summary-label">Доходы</div>
+          <div class="summary-label">${showRealIncome ? 'Реальный доход' : 'Доходы'}</div>
           <div class="summary-value positive">${formatKZT(income)}</div>
+          ${showRealIncome ? `<div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">(общий: ${formatKZT(totalIncome)})</div>` : ''}
         </div>
         <div class="summary-item">
           <div class="summary-label">Расходы</div>

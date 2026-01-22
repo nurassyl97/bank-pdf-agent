@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from .categories import categorize, categories_version
-from .models import Transaction
+from .models import CreditTransaction, QuestionnaireAnswers, Transaction
 
 
 def _to_df(transactions: List[Transaction]) -> pd.DataFrame:

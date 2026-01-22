@@ -170,6 +170,18 @@
         <div id="health-score" style="text-align: center; padding: 24px 0;"></div>
       </div>
 
+      <!-- Financial Reality Summary (if available) -->
+      <div id="reality-summary-section" class="card" style="display: none;">
+        <h2>Реальная финансовая картина</h2>
+        <div id="reality-summary"></div>
+      </div>
+
+      <!-- Warnings & Blind Spots (if available) -->
+      <div id="blind-spots-section" class="card" style="display: none;">
+        <h2>Предупреждения и слепые зоны</h2>
+        <div id="blind-spots"></div>
+      </div>
+
       <!-- Credit Risk Index (if available) -->
       <div id="credit-risk-section" class="card" style="display: none;">
         <h2>Индекс кредитного риска</h2>
@@ -540,7 +552,19 @@
     }
 
     function renderReport(data) {
-      // New sections for combined analysis
+      // Financial Reality Summary (most important section)
+      if (data.reality_summary) {
+        renderRealitySummary(data.reality_summary);
+        document.getElementById('reality-summary-section').style.display = 'block';
+      }
+      
+      // Warnings & Blind Spots
+      if (data.declared_vs_detected) {
+        renderBlindSpots(data.declared_vs_detected, data.reality_summary);
+        document.getElementById('blind-spots-section').style.display = 'block';
+      }
+      
+      // Other sections
       if (data.credit_risk_index) {
         renderCreditRiskIndex(data.credit_risk_index);
         document.getElementById('credit-risk-section').style.display = 'block';
@@ -566,6 +590,104 @@
       renderBeforeAfter(data);
       renderActionPlan(data);
       renderRecommendations(data);
+    }
+
+    function renderRealitySummary(reality) {
+      const container = document.getElementById('reality-summary');
+      
+      container.innerHTML = `
+        <div style="margin-bottom: 32px;">
+          <h3 style="color: #60a5fa; margin-bottom: 16px;">1. Что вы думаете о своей ситуации</h3>
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+            <div style="display: grid; gap: 12px;">
+              <div><strong>Доход:</strong> ${formatKZT(reality.what_you_think.monthly_income)}/месяц</div>
+              <div><strong>Расходы:</strong> ${formatKZT(reality.what_you_think.monthly_expenses)}/месяц</div>
+              <div><strong>Кредитные платежи:</strong> ${formatKZT(reality.what_you_think.monthly_credit_payments)}/месяц</div>
+              <div><strong>Общий долг:</strong> ${reality.what_you_think.total_debt ? formatKZT(reality.what_you_think.total_debt) : 'Не указан'}</div>
+              <div><strong>Подушка безопасности:</strong> ${reality.what_you_think.safety_buffer}</div>
+              <div><strong>Стабильность дохода:</strong> ${reality.what_you_think.income_stability === 'stable' ? 'Стабильный' : reality.what_you_think.income_stability === 'fluctuating' ? 'Колеблется' : 'Нестабильный'}</div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="margin-bottom: 32px;">
+          <h3 style="color: #fbbf24; margin-bottom: 16px;">2. Что показывают транзакции</h3>
+          <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+            <div style="display: grid; gap: 12px;">
+              <div><strong>Доход в выписке:</strong> ${formatKZT(reality.what_transactions_show.monthly_income)}/месяц</div>
+              <div><strong>Расходы в выписке:</strong> ${formatKZT(reality.what_transactions_show.monthly_expenses)}/месяц</div>
+              ${reality.what_transactions_show.credit_behavior.total_loans_issued > 0 ? `
+                <div><strong>Кредиты выданы за период:</strong> ${formatKZT(reality.what_transactions_show.credit_behavior.total_loans_issued)}</div>
+                <div><strong>Погашено за период:</strong> ${formatKZT(reality.what_transactions_show.credit_behavior.total_repayments)}</div>
+                <div><strong>Чистый поток кредитов:</strong> ${formatKZT(reality.what_transactions_show.credit_behavior.net_flow)}</div>
+                <div><strong>Частота кредитов:</strong> ${reality.what_transactions_show.credit_behavior.frequency}</div>
+                <div><strong>Рефинансирование:</strong> ${reality.what_transactions_show.credit_behavior.refinancing ? '⚠️ Обнаружено' : 'Не обнаружено'}</div>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+        
+        <div>
+          <h3 style="color: #22c55e; margin-bottom: 16px;">3. Что это означает</h3>
+          <div style="display: grid; gap: 12px;">
+            ${reality.what_this_means.map(item => {
+              const severityColors = {
+                critical: '#f97373',
+                warning: '#fbbf24',
+                info: '#60a5fa',
+              };
+              const color = severityColors[item.severity] || '#9ca3af';
+              return `
+                <div style="padding: 16px; background: rgba(${color === '#f97373' ? '239,68,68' : color === '#fbbf24' ? '251,191,36' : '59,130,246'}, 0.1); border-left: 4px solid ${color}; border-radius: 8px;">
+                  <div style="font-weight: 600; color: ${color}; margin-bottom: 8px;">${item.category === 'income' ? '💰 Доход' : item.category === 'expenses' ? '💸 Расходы' : item.category === 'credit_behavior' ? '💳 Кредитное поведение' : item.category === 'debt_load' ? '📊 Долговая нагрузка' : '📋 Общее'}</div>
+                  <div style="color: #cbd5e1; line-height: 1.6;">${item.message}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBlindSpots(comparison, realitySummary) {
+      const container = document.getElementById('blind-spots');
+      const discrepancies = comparison.discrepancies || [];
+      const warnings = comparison.warnings || [];
+      
+      if (discrepancies.length === 0 && warnings.length === 0) {
+        container.innerHTML = '<p style="color: #9ca3af;">Значительных расхождений не обнаружено.</p>';
+        return;
+      }
+      
+      container.innerHTML = `
+        ${discrepancies.map(d => {
+          const severityColors = {
+            critical: '#f97373',
+            high: '#f59e0b',
+            medium: '#fbbf24',
+            low: '#60a5fa',
+          };
+          const color = severityColors[d.severity] || '#9ca3af';
+          return `
+            <div style="padding: 16px; background: rgba(${color === '#f97373' ? '239,68,68' : color === '#f59e0b' ? '245,158,11' : color === '#fbbf24' ? '251,191,36' : '59,130,246'}, 0.1); border-left: 4px solid ${color}; border-radius: 8px; margin-bottom: 12px;">
+              <div style="font-weight: 600; color: ${color}; margin-bottom: 8px;">
+                ${d.type === 'income_overestimate' ? '⚠️ Завышенная оценка дохода' :
+                  d.type === 'income_underestimate' ? 'ℹ️ Заниженная оценка дохода' :
+                  d.type === 'expense_underestimate' ? '🚨 КРИТИЧНО: Заниженная оценка расходов' :
+                  d.type === 'expense_overestimate' ? 'ℹ️ Завышенная оценка расходов' : '⚠️ Расхождение'}
+              </div>
+              <div style="color: #cbd5e1; line-height: 1.6;">${d.message}</div>
+            </div>
+          `;
+        }).join('')}
+        
+        ${warnings.map(w => `
+          <div style="padding: 16px; background: rgba(239,68,68,0.1); border-left: 4px solid #f97373; border-radius: 8px; margin-bottom: 12px;">
+            <div style="font-weight: 600; color: #f97373; margin-bottom: 8px;">⚠️ Предупреждение</div>
+            <div style="color: #cbd5e1; line-height: 1.6;">${w}</div>
+          </div>
+        `).join('')}
+      `;
     }
 
     function renderCreditRiskIndex(risk) {

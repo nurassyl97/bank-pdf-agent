@@ -404,8 +404,9 @@
         currentQuestion++;
         renderQuestion();
       } else {
-        // Complete questionnaire
-        renderQuestion();
+        // Complete questionnaire - move to next step
+        currentQuestion++;
+        renderQuestion(); // This will detect currentQuestion >= questions.length and show upload
       }
     }
 

@@ -765,8 +765,9 @@
             <div style="font-size: 24px; font-weight: 700; color: #22c55e;">${formatKZT(analysis.total_repayments || 0)}</div>
           </div>
           <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px;">
-            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Оценочный активный долг</div>
-            <div style="font-size: 24px; font-weight: 700; color: ${(analysis.estimated_active_debt || 0) > 0 ? '#f97373' : '#22c55e'};">${formatKZT(analysis.estimated_active_debt || 0)}</div>
+            <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Чистый поток кредитов</div>
+            <div style="font-size: 24px; font-weight: 700; color: ${(analysis.net_credit_flow || 0) > 0 ? '#f97373' : '#22c55e'};">${formatKZT(analysis.net_credit_flow || 0)}</div>
+            <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">(выдано - погашено, НЕ активный долг)</div>
           </div>
           <div style="background: rgba(2,6,23,0.6); padding: 16px; border-radius: 12px;">
             <div style="font-size: 13px; color: #9ca3af; margin-bottom: 4px;">Частота кредитов</div>

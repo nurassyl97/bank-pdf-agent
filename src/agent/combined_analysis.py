@@ -449,8 +449,9 @@ def build_combined_analysis(
         "before_after": before_after,
         "questionnaire_summary": {
             "primary_goal": questionnaire.primary_goal if questionnaire else None,
-            "credit_load_perception": questionnaire.credit_load_perception if questionnaire else None,
-            "has_savings": questionnaire.has_savings if questionnaire else None,
+            "monthly_income": questionnaire.monthly_income if questionnaire else None,
+            "income_stability": questionnaire.income_stability if questionnaire else None,
+            "total_debt": questionnaire.total_outstanding_debt if questionnaire else None,
         } if questionnaire else None,
         "transactions": [
             {

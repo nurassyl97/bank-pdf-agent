@@ -23,6 +23,7 @@ from .analytics import (
     categories_version,
 )
 from .models import CreditTransaction, QuestionnaireAnswers, Transaction
+from .reality_analysis import build_financial_reality_summary, compare_declared_vs_detected
 
 
 def _analyze_credit_statement(credit_txns: List[CreditTransaction]) -> Dict[str, Any]:
@@ -31,11 +32,12 @@ def _analyze_credit_statement(credit_txns: List[CreditTransaction]) -> Dict[str,
         return {
             "total_loans_issued": 0.0,
             "total_repayments": 0.0,
-            "estimated_active_debt": 0.0,
+            "net_credit_flow": 0.0,  # issued - repaid (NOT active debt)
             "loan_frequency": 0,
             "refinancing_detected": False,
             "credit_spiral_risk": "none",
             "loan_types": {},
+            "note": "Credit statements show cash flows, not total active debt. Total debt must be declared by user.",
         }
     
     loans_issued = [t for t in credit_txns if t.amount > 0]
@@ -44,8 +46,9 @@ def _analyze_credit_statement(credit_txns: List[CreditTransaction]) -> Dict[str,
     total_loans = sum(t.amount for t in loans_issued)
     total_repayments = sum(-t.amount for t in repayments)
     
-    # Estimate active debt (loans issued - repayments, simplified)
-    estimated_active_debt = max(0, total_loans - total_repayments)
+    # Net credit flow: money that entered account from credits minus repayments
+    # This is NOT active debt - we cannot calculate active debt from statements
+    net_credit_flow = total_loans - total_repayments
     
     # Detect refinancing pattern: loan → repayment → new loan within short period
     refinancing_detected = False
@@ -87,11 +90,12 @@ def _analyze_credit_statement(credit_txns: List[CreditTransaction]) -> Dict[str,
     return {
         "total_loans_issued": total_loans,
         "total_repayments": total_repayments,
-        "estimated_active_debt": estimated_active_debt,
+        "net_credit_flow": net_credit_flow,  # issued - repaid (NOT active debt)
         "loan_frequency": len(loans_issued),
         "refinancing_detected": refinancing_detected,
         "credit_spiral_risk": credit_spiral_risk,
         "loan_types": loan_types,
+        "note": "Credit statements show cash flows during the period, not total active debt. Total debt must be declared by user.",
         "loans": [
             {
                 "date": t.date.isoformat(),
@@ -161,7 +165,7 @@ def _calculate_credit_risk_index(
     credit_analysis: Dict[str, Any],
     credit_statement_analysis: Dict[str, Any],
     real_income: Dict[str, Any],
-    questionnaire: Optional[QuestionnaireAnswers],
+    questionnaire: QuestionnaireAnswers,
 ) -> Dict[str, Any]:
     """Calculate comprehensive credit risk index."""
     risk_factors = []
@@ -214,16 +218,30 @@ def _calculate_credit_risk_index(
         risk_score += 10
         risk_factors.append(f"Высокая частота кредитов: {loan_freq} за период")
     
-    # Factor 6: Questionnaire perception vs reality
-    if questionnaire:
-        perception = questionnaire.credit_load_perception
-        actual_pct = credit_pct
-        if perception == "low" and actual_pct > 25:
+    # Factor 6: Declared debt load (use declared debt, not estimated)
+    if questionnaire.total_outstanding_debt:
+        declared_debt = questionnaire.total_outstanding_debt
+        declared_monthly_income = questionnaire.monthly_income
+        debt_to_income_months = (declared_debt / declared_monthly_income) if declared_monthly_income > 0 else 0
+        
+        if debt_to_income_months > 24:  # More than 2 years of income
+            risk_score += 25
+            risk_factors.append(f"Критический долг: {debt_to_income_months:.1f} месячных доходов в долгах")
+        elif debt_to_income_months > 12:  # More than 1 year
+            risk_score += 20
+            risk_factors.append(f"Высокий долг: {debt_to_income_months:.1f} месячных доходов в долгах")
+        elif debt_to_income_months > 6:
             risk_score += 10
-            risk_factors.append("Несоответствие: вы считаете нагрузку низкой, но она высокая")
-        elif perception == "medium" and actual_pct > 40:
-            risk_score += 10
-            risk_factors.append("Несоответствие: реальная нагрузка выше вашей оценки")
+            risk_factors.append(f"Умеренный долг: {debt_to_income_months:.1f} месячных доходов в долгах")
+    
+    # Factor 7: Credit payments vs income
+    credit_payments_pct = (questionnaire.monthly_credit_payments / questionnaire.monthly_income * 100) if questionnaire.monthly_income > 0 else 0
+    if credit_payments_pct > 40:
+        risk_score += 20
+        risk_factors.append(f"Кредитные платежи составляют {credit_payments_pct:.1f}% дохода")
+    elif credit_payments_pct > 25:
+        risk_score += 15
+        risk_factors.append(f"Кредитные платежи составляют {credit_payments_pct:.1f}% дохода")
     
     risk_score = min(100, risk_score)  # Cap at 100
     
@@ -264,8 +282,11 @@ def build_combined_analysis(
     Build comprehensive financial analysis combining:
     - Regular bank statement
     - Credit statement (if provided)
-    - Questionnaire answers (if provided)
+    - Questionnaire answers (MANDATORY for accurate analysis)
     """
+    if questionnaire is None:
+        return {"error": "Questionnaire is mandatory for accurate financial analysis"}
+    
     df = _to_df(transactions)
     if df.empty:
         return {"error": "No transactions found"}
@@ -299,6 +320,23 @@ def build_combined_analysis(
     
     # Calculate REAL income (excluding credit inflows)
     real_income_analysis = _calculate_real_income(transactions, credit_analysis)
+    
+    # Compare declared vs detected values
+    comparison = compare_declared_vs_detected(transactions, questionnaire)
+    
+    # Calculate detected monthly averages (simplified - assume 1 month period)
+    months_in_period = 1.0  # TODO: Calculate from date range
+    detected_monthly_income = total_income / months_in_period
+    detected_monthly_expenses = total_spending / months_in_period
+    
+    # Build Financial Reality Summary
+    reality_summary = build_financial_reality_summary(
+        questionnaire,
+        detected_monthly_income,
+        detected_monthly_expenses,
+        credit_statement_analysis,
+        comparison["discrepancies"],
+    )
     
     # Calculate credit risk index
     credit_risk = _calculate_credit_risk_index(
@@ -400,6 +438,8 @@ def build_combined_analysis(
         "credit_analysis": credit_analysis,
         "credit_statement_analysis": credit_statement_analysis,
         "credit_risk_index": credit_risk,
+        "reality_summary": reality_summary,
+        "declared_vs_detected": comparison,
         "money_leaks": leak_analysis,
         "recommendations": recommendations,
         "health_score": health_score,

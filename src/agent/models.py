@@ -23,15 +23,16 @@ class CreditTransaction:
 
 @dataclass
 class QuestionnaireAnswers:
-    """User onboarding questionnaire responses"""
-    has_credits: bool = False
-    credit_load_perception: str = "low"  # "low", "medium", "high", "very_high"
-    financial_safety_months: Optional[int] = None  # months can survive without income
-    has_savings: bool = False
-    savings_amount: Optional[float] = None
-    financial_behavior: str = "reactive"  # "planned", "reactive", "mixed"
-    primary_goal: str = "stabilize"  # "reduce_debt", "save", "stabilize"
-    ready_for_real_picture: bool = True
+    """User onboarding questionnaire responses - MANDATORY declared financial data"""
+    # Required financial numbers
+    monthly_income: float  # Average monthly income in KZT
+    income_stability: str  # "stable", "fluctuating", "unstable"
+    monthly_living_expenses: float  # Monthly expenses excluding credits, in KZT
+    monthly_credit_payments: float  # Monthly payments for all credits/installments, in KZT
+    total_outstanding_debt: Optional[float] = None  # Total current debt (can be None if unknown)
+    total_debt_range: Optional[str] = None  # "0-100k", "100k-500k", "500k-1m", "1m-3m", "3m+"
+    financial_safety_months: str = "0"  # "0", "<1", "1-3", "3+"
+    primary_goal: str = "understand_reality"  # "reduce_debt", "save", "stabilize", "understand_reality"
 
 
 @dataclass

@@ -93,8 +93,9 @@ async def analyze(
             except Exception as e:
                 raise HTTPException(status_code=422, detail=f"Failed to parse credit statement: {e}") from e
 
-    # Use combined analysis if questionnaire or credit statement provided
-    if questionnaire_answers or credit_txns:
+    # Questionnaire is now mandatory for accurate analysis
+    # Use combined analysis if questionnaire provided
+    if questionnaire_answers:
         return build_combined_analysis(
             txns,
             currency=currency,
@@ -103,8 +104,10 @@ async def analyze(
             credit_transactions=credit_txns,
         )
     
-    # Fallback to regular analysis
-    return build_analysis(txns, currency=currency, bank=bank)
+    # Fallback to regular analysis (but warn that it's incomplete)
+    result = build_analysis(txns, currency=currency, bank=bank)
+    result["warning"] = "Questionnaire not provided. Analysis is incomplete. Please provide questionnaire for accurate financial assessment."
+    return result
 
 
 def main() -> None:

@@ -118,7 +118,15 @@
     .nav-btn { padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; }
     .nav-btn.primary { background: linear-gradient(135deg, #22c55e, #a3e635); color: #0b1120; }
     .nav-btn.secondary { background: rgba(55,65,81,0.5); color: #e5e7eb; }
+    .nav-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .question-number { font-size: 12px; color: #9ca3af; margin-bottom: 8px; }
+    .question-help { font-size: 12px; color: #9ca3af; margin-top: 8px; font-style: italic; }
+    .number-input {
+      width: 100%; padding: 12px 16px; background: rgba(2,6,23,0.6);
+      border: 2px solid rgba(55,65,81,0.5); border-radius: 8px;
+      color: #e5e7eb; font-size: 14px; margin-top: 8px;
+    }
+    .number-input:focus { outline: none; border-color: #3b82f6; }
   </style>
 </head>
 <body>
@@ -269,70 +277,90 @@
       return v.toFixed(1) + '%';
     }
 
-    // Onboarding questionnaire state
+    // Onboarding questionnaire state - MANDATORY financial data
     let questionnaireAnswers = {
-      has_credits: false,
-      credit_load_perception: 'low',
+      monthly_income: null,
+      income_stability: null,
+      monthly_living_expenses: null,
+      monthly_credit_payments: null,
+      total_outstanding_debt: null,
+      total_debt_range: null,
       financial_safety_months: null,
-      has_savings: false,
-      savings_amount: null,
-      financial_behavior: 'reactive',
-      primary_goal: 'stabilize',
-      ready_for_real_picture: true,
+      primary_goal: null,
     };
     let currentQuestion = 0;
 
     const questions = [
       {
-        id: 'has_credits',
-        label: 'Есть ли у вас кредиты, займы или рассрочки?',
-        type: 'boolean',
-        options: [
-          { value: true, label: 'Да, есть' },
-          { value: false, label: 'Нет, кредитов нет' },
-        ],
+        id: 'monthly_income',
+        label: 'Какой у вас средний месячный доход? (в тенге)',
+        type: 'number',
+        placeholder: 'Например: 500000',
+        required: true,
+        help: 'Укажите средний доход за месяц. Если доход нестабилен, укажите среднее значение.',
       },
       {
-        id: 'credit_load_perception',
-        label: 'Как вы оцениваете свою кредитную нагрузку?',
+        id: 'income_stability',
+        label: 'Насколько стабилен ваш доход?',
         type: 'select',
         options: [
-          { value: 'low', label: 'Низкая — кредиты не мешают жить' },
-          { value: 'medium', label: 'Средняя — чувствую нагрузку, но управляю' },
-          { value: 'high', label: 'Высокая — кредиты отнимают много денег' },
-          { value: 'very_high', label: 'Очень высокая — кредиты — основная проблема' },
+          { value: 'stable', label: 'Стабильный — примерно одинаковый каждый месяц' },
+          { value: 'fluctuating', label: 'Колеблется — меняется, но предсказуемо' },
+          { value: 'unstable', label: 'Нестабильный — сильно меняется, непредсказуемо' },
         ],
+        required: true,
+      },
+      {
+        id: 'monthly_living_expenses',
+        label: 'Сколько вы обычно тратите в месяц на жизнь? (в тенге, без учета кредитов)',
+        type: 'number',
+        placeholder: 'Например: 400000',
+        required: true,
+        help: 'Укажите обычные расходы: еда, транспорт, коммунальные, развлечения. БЕЗ кредитных платежей.',
+      },
+      {
+        id: 'monthly_credit_payments',
+        label: 'Сколько вы платите в месяц по всем кредитам и рассрочкам? (в тенге)',
+        type: 'number',
+        placeholder: 'Например: 100000',
+        required: true,
+        help: 'Сумма всех ежемесячных платежей: кредиты, займы, рассрочки, кредитные карты.',
+      },
+      {
+        id: 'total_outstanding_debt',
+        label: 'Какой у вас общий долг? (в тенге)',
+        type: 'number',
+        placeholder: 'Например: 2000000',
+        required: false,
+        help: 'Если не знаете точную сумму, выберите диапазон на следующем шаге.',
+        optional: true,
+      },
+      {
+        id: 'total_debt_range',
+        label: 'Если не знаете точную сумму долга, выберите диапазон:',
+        type: 'select',
+        options: [
+          { value: null, label: 'Указал точную сумму выше' },
+          { value: '0-100k', label: '0 - 100,000 тенге' },
+          { value: '100k-500k', label: '100,000 - 500,000 тенге' },
+          { value: '500k-1m', label: '500,000 - 1,000,000 тенге' },
+          { value: '1m-3m', label: '1,000,000 - 3,000,000 тенге' },
+          { value: '3m+', label: 'Более 3,000,000 тенге' },
+        ],
+        required: false,
+        showIf: () => !questionnaireAnswers.total_outstanding_debt,
       },
       {
         id: 'financial_safety_months',
-        label: 'На сколько месяцев хватит ваших сбережений, если доход прекратится?',
-        type: 'number',
-        options: [
-          { value: 0, label: 'Меньше месяца' },
-          { value: 1, label: '1 месяц' },
-          { value: 3, label: '2-3 месяца' },
-          { value: 6, label: '4-6 месяцев' },
-          { value: 12, label: 'Больше 6 месяцев' },
-        ],
-      },
-      {
-        id: 'has_savings',
-        label: 'Есть ли у вас накопления или сбережения?',
-        type: 'boolean',
-        options: [
-          { value: true, label: 'Да, есть накопления' },
-          { value: false, label: 'Нет накоплений' },
-        ],
-      },
-      {
-        id: 'financial_behavior',
-        label: 'Как вы обычно управляете финансами?',
+        label: 'Если доход прекратится, на сколько месяцев хватит ваших сбережений?',
         type: 'select',
         options: [
-          { value: 'planned', label: 'Планирую заранее, веду бюджет' },
-          { value: 'mixed', label: 'Частично планирую, частично по ситуации' },
-          { value: 'reactive', label: 'Реагирую на ситуацию, когда нужно' },
+          { value: '0', label: '0 — нет сбережений' },
+          { value: '<1', label: 'Меньше месяца' },
+          { value: '1-3', label: '1-3 месяца' },
+          { value: '3+', label: 'Более 3 месяцев' },
         ],
+        required: true,
       },
       {
         id: 'primary_goal',
@@ -342,16 +370,9 @@
           { value: 'reduce_debt', label: 'Снизить долги и кредиты' },
           { value: 'save', label: 'Накопить и создать подушку безопасности' },
           { value: 'stabilize', label: 'Стабилизировать бюджет и расходы' },
+          { value: 'understand_reality', label: 'Понять реальную картину моих финансов' },
         ],
-      },
-      {
-        id: 'ready_for_real_picture',
-        label: 'Готовы ли вы увидеть реальную картину ваших финансов, даже если она будет неприятной?',
-        type: 'boolean',
-        options: [
-          { value: true, label: 'Да, хочу знать правду' },
-          { value: false, label: 'Предпочитаю мягкий анализ' },
-        ],
+        required: true,
       },
     ];
 
@@ -366,24 +387,50 @@
       const question = questions[currentQuestion];
       const container = document.getElementById('questionnaire');
       
-      container.innerHTML = `
-        <div class="question-number">Вопрос ${currentQuestion + 1} из ${questions.length}</div>
-        <div class="question">
-          <div class="question-label">${question.label}</div>
+      // Check if question should be shown
+      if (question.showIf && !question.showIf()) {
+        currentQuestion++;
+        renderQuestion();
+        return;
+      }
+      
+      let inputHtml = '';
+      if (question.type === 'number') {
+        const value = getAnswerValue(question.id) || '';
+        inputHtml = `
+          <input type="number" class="number-input" id="input-${question.id}" 
+                 placeholder="${question.placeholder || ''}" 
+                 value="${value}"
+                 onchange="selectAnswer('${question.id}', parseFloat(this.value) || null)"
+                 ${question.required ? 'required' : ''} />
+        `;
+      } else if (question.type === 'select') {
+        inputHtml = `
           <div class="question-options">
             ${question.options.map(opt => `
               <button class="option-btn ${getAnswerValue(question.id) === opt.value ? 'selected' : ''}" 
-                      onclick="selectAnswer('${question.id}', ${JSON.stringify(opt.value).replace(/"/g, '&quot;')})">
+                      onclick="selectAnswer('${question.id}', ${opt.value === null ? 'null' : JSON.stringify(opt.value).replace(/"/g, '&quot;')})">
                 ${opt.label}
               </button>
             `).join('')}
           </div>
+        `;
+      }
+      
+      const canProceed = question.required ? getAnswerValue(question.id) !== null && getAnswerValue(question.id) !== '' : true;
+      
+      container.innerHTML = `
+        <div class="question-number">Вопрос ${currentQuestion + 1} из ${questions.length}</div>
+        <div class="question">
+          <div class="question-label">${question.label}${question.required ? ' *' : ''}</div>
+          ${inputHtml}
+          ${question.help ? `<div class="question-help">${question.help}</div>` : ''}
         </div>
         <div class="questionnaire-nav">
-          <button class="nav-btn secondary" onclick="prevQuestion()" ${currentQuestion === 0 ? 'disabled style="opacity:0.5"' : ''}>
+          <button class="nav-btn secondary" onclick="prevQuestion()" ${currentQuestion === 0 ? 'disabled' : ''}>
             Назад
           </button>
-          <button class="nav-btn primary" onclick="nextQuestion()">
+          <button class="nav-btn primary" onclick="nextQuestion()" ${!canProceed ? 'disabled' : ''}>
             ${currentQuestion === questions.length - 1 ? 'Завершить' : 'Далее'}
           </button>
         </div>
